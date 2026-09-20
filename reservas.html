@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Todas las Reservas</title>
+  <meta name="description" content="Visualiza todas las reservas realizadas en tiempo real">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* Admin reservas grid */
+    .admin-reservas-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .admin-reserva-card {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 14px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+    }
+    .admin-reserva-card .hora {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      color: var(--accent);
+      min-width: 52px;
+    }
+    .admin-reserva-card .name {
+      flex: 1;
+      font-size: 0.9rem;
+    }
+
+    /* Stat row */
+    .stats-row {
+      display: flex;
+      gap: 14px;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+    }
+    .stat-pill {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-full);
+      padding: 8px 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.875rem;
+    }
+    .stat-pill .sp-num {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: var(--accent);
+    }
+    .stat-pill .sp-label {
+      color: var(--text-secondary);
+    }
+
+    /* Live badge */
+    .live-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.725rem;
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      background: var(--accent-dim);
+      border: 1px solid rgba(0,212,170,0.2);
+      padding: 3px 10px;
+      border-radius: var(--r-full);
+    }
+    .live-badge::before {
+      content: '';
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: brand-pulse 1.5s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── NAVIGATION ── -->
+  <nav>
+    <a href="index.html" class="nav-brand">
+      <span class="brand-dot"></span>
+      <span id="nav-title">Calendario</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="index.html">Reservar</a></li>
+      <li><a href="reservas.html" class="active">Ver reservas</a></li>
+    </ul>
+  </nav>
+
+  <!-- ── PAGE HEADER ── -->
+  <div class="page-header">
+    <div class="flex items-center gap-3 mb-2">
+      <h1>Todas las <span class="hl">reservas</span></h1>
+      <span class="live-badge">EN VIVO</span>
+    </div>
+    <p>Vista en tiempo real de todas las inscripciones realizadas</p>
+  </div>
+
+  <!-- ── MAIN CONTENT ── -->
+  <div class="container">
+
+    <!-- Stats -->
+    <div class="stats-row">
+      <div class="stat-pill">
+        <span class="sp-num" id="stat-total">—</span>
+        <span class="sp-label">reservas totales</span>
+      </div>
+      <div class="stat-pill">
+        <span class="sp-num" id="stat-dates-with">—</span>
+        <span class="sp-label">fechas con reservas</span>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="filter-bar">
+      <input
+        type="text"
+        class="form-input"
+        id="filter-name"
+        placeholder="🔍  Buscar por nombre..."
+        autocomplete="off"
+      >
+      <input
+        type="date"
+        class="form-input"
+        id="filter-date"
+        title="Filtrar por fecha"
+      >
+      <button class="btn btn-ghost btn-sm" id="clear-filters">Limpiar filtros</button>
+      <span class="count-label" id="total-count">0 reservas</span>
+    </div>
+
+    <!-- Reservations list -->
+    <div id="reservas-list">
+      <div class="empty-state">
+        <div class="es-icon">⏳</div>
+        <div class="es-title">Cargando reservas...</div>
+      </div>
+    </div>
+
+  </div><!-- /.container -->
+
+  <!-- ── TOAST CONTAINER ── -->
+  <div id="toast-container" aria-live="polite"></div>
+
+  <!-- ── FIREBASE SDKs ── -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/reservas.js"></script>
+
+</body>
+</html>
