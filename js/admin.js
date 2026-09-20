@@ -449,15 +449,116 @@ window.adminDeleteDate = async function(id, fecha) {
 };
 
 // ════════════════════════════════════════════
+// CONSECUTIVE SLOT GROUPING (ADMIN)
+// ════════════════════════════════════════════
+function parseTimeMins(str) {
+  if (!str) return 0;
+  const m = str.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  const hOnly = str.trim().match(/^(\d{1,2})$/);
+  if (hOnly) return parseInt(hOnly[1], 10) * 60;
+  return 0;
+}
+
+function minsToTimeStr(mins) {
+  const h = Math.floor(mins / 60) % 24;
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function parseSlotRange(horaStr) {
+  if (!horaStr) return { startMins: 0, endMins: 60 };
+  if (horaStr.includes('-')) {
+    const parts = horaStr.split('-');
+    const startMins = parseTimeMins(parts[0]);
+    const endMins   = parseTimeMins(parts[1]);
+    return { startMins, endMins: endMins > startMins ? endMins : startMins + 60 };
+  }
+  const startMins = parseTimeMins(horaStr);
+  return { startMins, endMins: startMins + 60 };
+}
+
+function groupReservationsByConsecutive(items) {
+  const byName = {};
+  items.forEach(r => {
+    const name = r.nombre || 'Sin nombre';
+    if (!byName[name]) byName[name] = [];
+    const times = parseSlotRange(r.hora);
+    byName[name].push({
+      ...r,
+      startMins: times.startMins,
+      endMins:   times.endMins
+    });
+  });
+
+  const mergedBlocks = [];
+
+  Object.values(byName).forEach(userItems => {
+    userItems.sort((a, b) => a.startMins - b.startMins);
+
+    let currentBlock = null;
+
+    userItems.forEach(item => {
+      if (!currentBlock) {
+        currentBlock = {
+          nombre:    item.nombre,
+          fecha:     item.fecha,
+          startMins: item.startMins,
+          endMins:   item.endMins,
+          slots:     [item.hora],
+          ids:       [item.id]
+        };
+      } else {
+        if (item.startMins <= currentBlock.endMins) {
+          currentBlock.endMins = Math.max(currentBlock.endMins, item.endMins);
+          currentBlock.slots.push(item.hora);
+          currentBlock.ids.push(item.id);
+        } else {
+          mergedBlocks.push(currentBlock);
+          currentBlock = {
+            nombre:    item.nombre,
+            fecha:     item.fecha,
+            startMins: item.startMins,
+            endMins:   item.endMins,
+            slots:     [item.hora],
+            ids:       [item.id]
+          };
+        }
+      }
+    });
+
+    if (currentBlock) {
+      mergedBlocks.push(currentBlock);
+    }
+  });
+
+  const result = mergedBlocks.map(block => {
+    let timeLabel = '';
+    if (block.slots.length === 1) {
+      timeLabel = block.slots[0];
+    } else {
+      const startStr = minsToTimeStr(block.startMins);
+      const endStr   = minsToTimeStr(block.endMins);
+      timeLabel = `${startStr} - ${endStr}`;
+    }
+    return {
+      ...block,
+      horaDisplay: timeLabel
+    };
+  });
+
+  result.sort((a, b) => a.startMins - b.startMins);
+  return result;
+}
+
+// ════════════════════════════════════════════
 // ADMIN RESERVATIONS VIEW
 // ════════════════════════════════════════════
 function renderAdminReservations() {
   if (!adminReservasList) return;
-  if (adminReservasCount) {
-    adminReservasCount.textContent = `${allAdminReservations.length} reserva${allAdminReservations.length !== 1 ? 's' : ''}`;
-  }
 
   if (allAdminReservations.length === 0) {
+    if (adminReservasCount) adminReservasCount.textContent = '0 reservas';
     adminReservasList.innerHTML = `
       <div class="empty-state">
         <div class="es-icon">📭</div>
@@ -475,35 +576,49 @@ function renderAdminReservations() {
     byDate[r.fecha].push(r);
   });
 
+  let grandTotalBlocks = 0;
+
   adminReservasList.innerHTML = Object.entries(byDate)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([fecha, items]) => {
-      const sorted = items.slice().sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+      const grouped = groupReservationsByConsecutive(items);
+      grandTotalBlocks += grouped.length;
+
       return `
         <div class="admin-date-group">
           <div class="admin-date-group-header">
             <h3 class="font-mono" style="font-size:0.95rem">${escHtml(fecha)}</h3>
-            <span class="badge badge-accent">${items.length} reserva${items.length !== 1 ? 's' : ''}</span>
+            <span class="badge badge-accent">${grouped.length} reserva${grouped.length !== 1 ? 's' : ''}</span>
           </div>
-          ${sorted.map(r => `
+          ${grouped.map(block => `
             <div class="admin-slot-row">
-              <span class="admin-slot-time">${escHtml(r.hora)}</span>
-              <span class="admin-slot-name">${escHtml(r.nombre)}</span>
+              <span class="admin-slot-time">${escHtml(block.horaDisplay)}</span>
+              <span class="admin-slot-name">${escHtml(block.nombre)}</span>
               <button class="btn btn-danger btn-sm"
-                onclick="adminDeleteReservation('${r.id}','${escHtml(r.nombre)}','${escHtml(r.fecha)}','${escHtml(r.hora)}')"
+                onclick="adminDeleteReservationGroup('${block.ids.join(',')}', '${escHtml(block.nombre)}', '${escHtml(fecha)}', '${escHtml(block.horaDisplay)}')"
                 title="Eliminar reserva">✕</button>
             </div>
           `).join('')}
         </div>
       `;
     }).join('');
+
+  if (adminReservasCount) {
+    adminReservasCount.textContent = `${grandTotalBlocks} reserva${grandTotalBlocks !== 1 ? 's' : ''}`;
+  }
 }
 
-window.adminDeleteReservation = async function(id, nombre, fecha, hora) {
-  if (!confirm(`¿Eliminar la reserva de ${nombre} (${fecha} — ${hora})?`)) return;
+window.adminDeleteReservationGroup = async function(idsStr, nombre, fecha, horaDisplay) {
+  const ids = idsStr.split(',').filter(Boolean);
+  if (!confirm(`¿Eliminar la reserva de ${nombre} (${fecha} — ${horaDisplay})?`)) return;
+
   try {
-    await db.collection('reservas').doc(id).delete();
-    showToast(`Reserva de ${nombre} eliminada`, 'success');
+    const batch = db.batch();
+    ids.forEach(id => {
+      batch.delete(db.collection('reservas').doc(id));
+    });
+    await batch.commit();
+    showToast(`Reserva de ${nombre} (${horaDisplay}) eliminada`, 'success');
   } catch (err) {
     showToast('Error al eliminar: ' + err.message, 'error');
   }

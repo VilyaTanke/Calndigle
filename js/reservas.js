@@ -108,6 +108,109 @@ function updateStats() {
 }
 
 // ════════════════════════════════════════════
+// CONSECUTIVE SLOT GROUPING
+// ════════════════════════════════════════════
+function parseTimeMins(str) {
+  if (!str) return 0;
+  const m = str.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+  const hOnly = str.trim().match(/^(\d{1,2})$/);
+  if (hOnly) return parseInt(hOnly[1], 10) * 60;
+  return 0;
+}
+
+function minsToTimeStr(mins) {
+  const h = Math.floor(mins / 60) % 24;
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function parseSlotRange(horaStr) {
+  if (!horaStr) return { startMins: 0, endMins: 60 };
+  if (horaStr.includes('-')) {
+    const parts = horaStr.split('-');
+    const startMins = parseTimeMins(parts[0]);
+    const endMins   = parseTimeMins(parts[1]);
+    return { startMins, endMins: endMins > startMins ? endMins : startMins + 60 };
+  }
+  const startMins = parseTimeMins(horaStr);
+  return { startMins, endMins: startMins + 60 };
+}
+
+function groupReservationsByConsecutive(items) {
+  const byName = {};
+  items.forEach(r => {
+    const name = r.nombre || 'Sin nombre';
+    if (!byName[name]) byName[name] = [];
+    const times = parseSlotRange(r.hora);
+    byName[name].push({
+      ...r,
+      startMins: times.startMins,
+      endMins:   times.endMins
+    });
+  });
+
+  const mergedBlocks = [];
+
+  Object.values(byName).forEach(userItems => {
+    userItems.sort((a, b) => a.startMins - b.startMins);
+
+    let currentBlock = null;
+
+    userItems.forEach(item => {
+      if (!currentBlock) {
+        currentBlock = {
+          nombre:    item.nombre,
+          fecha:     item.fecha,
+          startMins: item.startMins,
+          endMins:   item.endMins,
+          slots:     [item.hora],
+          ids:       [item.id]
+        };
+      } else {
+        if (item.startMins <= currentBlock.endMins) {
+          currentBlock.endMins = Math.max(currentBlock.endMins, item.endMins);
+          currentBlock.slots.push(item.hora);
+          currentBlock.ids.push(item.id);
+        } else {
+          mergedBlocks.push(currentBlock);
+          currentBlock = {
+            nombre:    item.nombre,
+            fecha:     item.fecha,
+            startMins: item.startMins,
+            endMins:   item.endMins,
+            slots:     [item.hora],
+            ids:       [item.id]
+          };
+        }
+      }
+    });
+
+    if (currentBlock) {
+      mergedBlocks.push(currentBlock);
+    }
+  });
+
+  const result = mergedBlocks.map(block => {
+    let timeLabel = '';
+    if (block.slots.length === 1) {
+      timeLabel = block.slots[0];
+    } else {
+      const startStr = minsToTimeStr(block.startMins);
+      const endStr   = minsToTimeStr(block.endMins);
+      timeLabel = `${startStr} - ${endStr}`;
+    }
+    return {
+      ...block,
+      horaDisplay: timeLabel
+    };
+  });
+
+  result.sort((a, b) => a.startMins - b.startMins);
+  return result;
+}
+
+// ════════════════════════════════════════════
 // RENDER
 // ════════════════════════════════════════════
 function renderReservations() {
@@ -120,11 +223,6 @@ function renderReservations() {
     return true;
   });
 
-  // Update count label
-  if (totalCountEl) {
-    totalCountEl.textContent = `${filtered.length} reserva${filtered.length !== 1 ? 's' : ''}`;
-  }
-
   if (!reservasList) return;
 
   if (allReservations.length === 0) {
@@ -135,6 +233,7 @@ function renderReservations() {
         <div class="es-body">Cuando los participantes se inscriban, aparecerán aquí en tiempo real.</div>
       </div>
     `;
+    if (totalCountEl) totalCountEl.textContent = '0 reservas';
     return;
   }
 
@@ -146,6 +245,7 @@ function renderReservations() {
         <div class="es-body">No hay reservas que coincidan con los filtros aplicados.</div>
       </div>
     `;
+    if (totalCountEl) totalCountEl.textContent = '0 reservas';
     return;
   }
 
@@ -156,27 +256,36 @@ function renderReservations() {
     byDate[r.fecha].push(r);
   });
 
+  let grandTotalBlocks = 0;
+
   reservasList.innerHTML = Object.entries(byDate)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([fecha, items]) => {
-      const sorted = items.slice().sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+      const groupedBlocks = groupReservationsByConsecutive(items);
+      grandTotalBlocks += groupedBlocks.length;
+
       return `
         <div class="date-group">
           <div class="date-group-header">
             <h2 class="date-group-title">${strToDisplayDate(fecha)}</h2>
-            <span class="badge badge-accent">${items.length} reserva${items.length !== 1 ? 's' : ''}</span>
+            <span class="badge badge-accent">${groupedBlocks.length} reserva${groupedBlocks.length !== 1 ? 's' : ''}</span>
           </div>
           <div class="reservations-grid">
-            ${sorted.map(r => `
+            ${groupedBlocks.map(block => `
               <div class="reservation-card">
-                <div class="reservation-time">${escHtml(r.hora)}</div>
-                <div class="reservation-name">${escHtml(r.nombre)}</div>
+                <div class="reservation-time">${escHtml(block.horaDisplay)}</div>
+                <div class="reservation-name">${escHtml(block.nombre)}</div>
               </div>
             `).join('')}
           </div>
         </div>
       `;
     }).join('');
+
+  // Update count label
+  if (totalCountEl) {
+    totalCountEl.textContent = `${grandTotalBlocks} reserva${grandTotalBlocks !== 1 ? 's' : ''}`;
+  }
 }
 
 // ════════════════════════════════════════════
