@@ -192,12 +192,12 @@ function updateStats() {
   const activeDates   = managedDates.filter(d => d.activa !== false).length;
   const totalSlots    = managedDates.reduce((sum, d) => sum + (d.slots || []).length, 0);
   const totalRes      = allAdminReservations.length;
-  const freeSlots     = Math.max(0, totalSlots - totalRes);
+  const uniqueUsers   = new Set(allAdminReservations.map(r => r.nombre)).size;
 
   if (statDates)        statDates.textContent        = activeDates;
   if (statTotalSlots)   statTotalSlots.textContent   = totalSlots;
   if (statReservations) statReservations.textContent = totalRes;
-  if (statAvailable)    statAvailable.textContent    = freeSlots;
+  if (statAvailable)    statAvailable.textContent    = uniqueUsers;
 }
 
 // ════════════════════════════════════════════
@@ -443,10 +443,7 @@ function renderDatesTable() {
 
   datesTableBody.innerHTML = sorted.map(d => {
     const reservaCount = allAdminReservations.filter(r => r.fecha === d.fecha).length;
-    const totalSlots   = (d.slots || []).length;
-    const badgeClass   = reservaCount === totalSlots ? 'badge-danger'
-                       : reservaCount > 0            ? 'badge-amber'
-                       :                              'badge-success';
+    const badgeClass   = reservaCount > 0 ? 'badge-amber' : 'badge-neutral';
 
     const slotBadges = (d.slots || []).slice(0, 6)
       .map(s => `<span class="badge badge-accent">${escHtml(s)}</span>`)
@@ -467,7 +464,7 @@ function renderDatesTable() {
           </div>
         </td>
         <td>
-          <span class="badge ${badgeClass}">${reservaCount}/${totalSlots}</span>
+          <span class="badge ${badgeClass}">${reservaCount} reserva${reservaCount !== 1 ? 's' : ''}</span>
         </td>
         <td>
           <div class="table-actions">

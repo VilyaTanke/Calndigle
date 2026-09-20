@@ -375,13 +375,17 @@
   min-width: 0;
 }
 
-.slot-name {
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
+.slot-registered-names {
+  font-size: 0.75rem;
+  color: var(--amber);
+  background: var(--amber-dim);
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  border: 1px solid rgba(240, 165, 0, 0.3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 120px;
+  max-width: 150px;
 }
 
 .slot-free-label {

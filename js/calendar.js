@@ -144,7 +144,9 @@ db.collection('reservas').onSnapshot(snapshot => {
   snapshot.forEach(doc => {
     const data = doc.data();
     if (data.fecha && data.hora) {
-      reservationMap[`${data.fecha}_${data.hora}`] = { nombre: data.nombre, id: doc.id };
+      const key = `${data.fecha}_${data.hora}`;
+      if (!reservationMap[key]) reservationMap[key] = [];
+      reservationMap[key].push({ nombre: data.nombre, id: doc.id });
     }
   });
   renderCalendar();
@@ -194,22 +196,18 @@ function renderCalendar() {
     let slotInfoHtml = '';
 
     if (fechaData) {
-      const slots      = fechaData.slots || [];
-      const takenCount = slots.filter(s => reservationMap[`${dateStr}_${s}`]).length;
-      const freeCount  = slots.length - takenCount;
+      const slots    = fechaData.slots || [];
+      const totalRes = slots.reduce((sum, s) => sum + (reservationMap[`${dateStr}_${s}`]?.length || 0), 0);
 
-      if (freeCount === 0) {
-        cell.classList.add('full');
-        slotInfoHtml = '<span class="cal-slot-info">Completo</span>';
-      } else if (takenCount > 0) {
+      cell.classList.add('available');
+      if (totalRes > 0) {
         cell.classList.add('partial');
-        slotInfoHtml = `<span class="cal-slot-info">${freeCount} libre${freeCount !== 1 ? 's' : ''}</span>`;
+        slotInfoHtml = `<span class="cal-slot-info">${totalRes} reserva${totalRes !== 1 ? 's' : ''}</span>`;
       } else {
-        cell.classList.add('available');
         slotInfoHtml = `<span class="cal-slot-info">${slots.length} slot${slots.length !== 1 ? 's' : ''}</span>`;
       }
 
-      if (!isPast && freeCount > 0) {
+      if (!isPast && slots.length > 0) {
         cell.addEventListener('click', () => handleDateClick(dateStr, fechaData));
       }
     }
@@ -264,33 +262,28 @@ function renderSlots(dateStr, fechaData) {
   }
 
   slots.forEach(hora => {
-    const key         = `${dateStr}_${hora}`;
-    const reservation = reservationMap[key];
-    const isTaken     = !!reservation;
-    const isSelected  = selectedSlots.has(hora);
+    const key          = `${dateStr}_${hora}`;
+    const reservations = reservationMap[key] || [];
+    const isSelected   = selectedSlots.has(hora);
 
     const card = document.createElement('div');
-    card.className = `slot-card ${isTaken ? 'slot-taken' : (isSelected ? 'slot-selected' : 'slot-available')}`;
+    card.className = `slot-card ${isSelected ? 'slot-selected' : 'slot-available'}`;
     card.dataset.hora = hora;
 
-    if (isTaken) {
-      card.innerHTML = `
-        <span class="slot-time">${hora}</span>
-        <div class="slot-right">
-          <span class="slot-name">${escHtml(reservation.nombre)}</span>
-          <span class="badge badge-danger">Ocupado</span>
-        </div>
-      `;
-    } else {
-      card.innerHTML = `
-        <span class="slot-time">${hora}</span>
-        <div class="slot-right">
-          <span class="slot-free-label">${isSelected ? 'Seleccionado' : 'Disponible'}</span>
-          ${isSelected ? '<span class="slot-check">✓</span>' : ''}
-        </div>
-      `;
-      card.addEventListener('click', () => toggleSlot(hora));
-    }
+    const namesText = reservations.map(r => r.nombre).join(', ');
+    const namesHtml = reservations.length > 0
+      ? `<span class="slot-registered-names" title="${escHtml(namesText)}">👥 ${escHtml(namesText)}</span>`
+      : '';
+
+    card.innerHTML = `
+      <span class="slot-time">${hora}</span>
+      <div class="slot-right">
+        ${namesHtml}
+        <span class="slot-free-label">${isSelected ? 'Seleccionado' : 'Disponible'}</span>
+        ${isSelected ? '<span class="slot-check">✓</span>' : ''}
+      </div>
+    `;
+    card.addEventListener('click', () => toggleSlot(hora));
 
     slotsGrid.appendChild(card);
   });
@@ -391,12 +384,6 @@ modalSubmit.addEventListener('click', async () => {
   modalError.classList.add('hidden');
 
   try {
-    // Race condition check: verify all slots are still free
-    const nowTaken = slots.filter(h => reservationMap[`${selectedDate}_${h}`]);
-    if (nowTaken.length > 0) {
-      throw new Error(`Los horarios ${nowTaken.join(', ')} ya no están disponibles. Por favor, actualiza tu selección.`);
-    }
-
     // Batch write one document per slot
     const batch = db.batch();
     slots.forEach(hora => {
