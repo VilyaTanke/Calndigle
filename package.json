@@ -1,0 +1,12 @@
+{
+  "name": "calendario-interactivo",
+  "version": "1.0.0",
+  "description": "Calendario interactivo de reservas — GitHub Pages + Firebase",
+  "scripts": {
+    "start": "serve . --listen 3000 --no-clipboard",
+    "dev": "serve . --listen 3000"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}
