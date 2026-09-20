@@ -173,9 +173,13 @@ function initDashboard() {
   // Real-time reservations listener
   if (reservasUnsubscribe) reservasUnsubscribe();
   reservasUnsubscribe = db.collection('reservas')
-    .orderBy('fecha').orderBy('hora')
     .onSnapshot(snap => {
       allAdminReservations = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      allAdminReservations.sort((a, b) => {
+        const dateCmp = (a.fecha || '').localeCompare(b.fecha || '');
+        if (dateCmp !== 0) return dateCmp;
+        return (a.hora || '').localeCompare(b.hora || '');
+      });
       updateStats();
       renderAdminReservations();
     }, err => console.error('Reservations error:', err));

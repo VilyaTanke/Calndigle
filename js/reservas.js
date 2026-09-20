@@ -71,12 +71,15 @@ db.collection('settings').doc('main').get().then(doc => {
 
 // Real-time reservations listener
 db.collection('reservas')
-  .orderBy('fecha')
-  .orderBy('hora')
   .onSnapshot(snapshot => {
     allReservations = [];
     snapshot.forEach(doc => {
       allReservations.push({ id: doc.id, ...doc.data() });
+    });
+    allReservations.sort((a, b) => {
+      const dateCmp = (a.fecha || '').localeCompare(b.fecha || '');
+      if (dateCmp !== 0) return dateCmp;
+      return (a.hora || '').localeCompare(b.hora || '');
     });
     updateStats();
     renderReservations();
