@@ -1,6 +1,6 @@
 /* =====================================================
    CALENDAR.JS — Main calendar logic
-   Handles: month grid, date selection, slot rendering,
+   Handles: month grid, multi-date selection, slot rendering,
             registration modal, real-time Firestore sync
    ===================================================== */
 'use strict';
@@ -10,8 +10,8 @@
 // ════════════════════════════════════════════
 let currentMonth     = new Date();        // Month currently displayed
 let availableDates   = {};               // { "YYYY-MM-DD": { slots, activa, id } }
-let reservationMap   = {};               // { "YYYY-MM-DD_HH:MM": { nombre, id } }
-let selectedDate     = null;             // Currently selected date string
+let reservationMap   = {};               // { "YYYY-MM-DD_HH:MM": [ { nombre, id }, ... ] }
+let selectedDates    = new Set();        // Set of selected date strings ("YYYY-MM-DD")
 let selectedSlots    = new Set();        // Set of selected slot times ("HH:MM")
 
 // ════════════════════════════════════════════
@@ -129,11 +129,16 @@ db.collection('fechas').onSnapshot(snapshot => {
       };
     }
   });
+
+  // Remove selected dates that are no longer available
+  selectedDates.forEach(d => {
+    if (!availableDates[d]) selectedDates.delete(d);
+  });
+
   renderCalendar();
-  if (selectedDate && availableDates[selectedDate]) {
-    renderSlots(selectedDate, availableDates[selectedDate]);
-  } else if (selectedDate && !availableDates[selectedDate]) {
-    // Date was removed by admin
+  if (selectedDates.size > 0) {
+    renderSlots();
+  } else {
     clearDateSelection();
   }
 });
@@ -150,8 +155,8 @@ db.collection('reservas').onSnapshot(snapshot => {
     }
   });
   renderCalendar();
-  if (selectedDate && availableDates[selectedDate]) {
-    renderSlots(selectedDate, availableDates[selectedDate]);
+  if (selectedDates.size > 0) {
+    renderSlots();
   }
 });
 
@@ -191,7 +196,7 @@ function renderCalendar() {
     cell.className = 'cal-cell';
     if (isToday) cell.classList.add('today');
     if (isPast)  cell.classList.add('past');
-    if (dateStr === selectedDate) cell.classList.add('selected');
+    if (selectedDates.has(dateStr)) cell.classList.add('selected');
 
     let slotInfoHtml = '';
 
@@ -221,63 +226,120 @@ function renderCalendar() {
 // DATE SELECTION
 // ════════════════════════════════════════════
 function handleDateClick(dateStr, fechaData) {
-  if (selectedDate !== dateStr) {
-    selectedSlots.clear();
+  if (selectedDates.has(dateStr)) {
+    selectedDates.delete(dateStr);
+  } else {
+    selectedDates.add(dateStr);
   }
-  selectedDate = dateStr;
+
   renderCalendar();
-  renderSlots(dateStr, fechaData);
+
+  if (selectedDates.size > 0) {
+    renderSlots();
+  } else {
+    clearDateSelection();
+  }
+
   // Scroll to slots on mobile
-  if (window.innerWidth < 900) {
+  if (window.innerWidth < 900 && selectedDates.size > 0) {
     document.getElementById('slots-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 }
 
 function clearDateSelection() {
-  selectedDate = null;
+  selectedDates.clear();
   selectedSlots.clear();
   slotsPlaceholder.classList.remove('hidden');
   slotsContent.classList.add('hidden');
   renderCalendar();
 }
 
+window.removeSelectedDate = function(dStr) {
+  selectedDates.delete(dStr);
+  renderCalendar();
+  if (selectedDates.size > 0) {
+    renderSlots();
+  } else {
+    clearDateSelection();
+  }
+};
+
 clearDateBtn.addEventListener('click', clearDateSelection);
 
 // ════════════════════════════════════════════
 // SLOTS RENDERING
 // ════════════════════════════════════════════
-function renderSlots(dateStr, fechaData) {
+function renderSlots() {
+  if (selectedDates.size === 0) {
+    clearDateSelection();
+    return;
+  }
+
   slotsPlaceholder.classList.add('hidden');
   slotsContent.classList.remove('hidden');
 
-  selectedDateLbl.textContent = strToDisplayDate(dateStr);
+  const sortedDates = [...selectedDates].sort();
 
-  const slots = (fechaData.slots || []).slice().sort();
+  if (sortedDates.length === 1) {
+    selectedDateLbl.textContent = strToDisplayDate(sortedDates[0]);
+  } else {
+    selectedDateLbl.innerHTML = `
+      <div class="selected-dates-header-title">${sortedDates.length} fechas seleccionadas</div>
+      <div class="selected-date-chips">
+        ${sortedDates.map(d => `<span class="date-chip">${d.split('-').slice(1).join('/')} <button type="button" class="chip-remove" onclick="event.stopPropagation(); removeSelectedDate('${d}')" title="Quitar fecha">✕</button></span>`).join('')}
+      </div>
+    `;
+  }
+
+  // Find all unique slots available across all selected dates
+  const allSlotsSet = new Set();
+  sortedDates.forEach(dStr => {
+    const fData = availableDates[dStr];
+    if (fData && fData.slots) {
+      fData.slots.forEach(s => allSlotsSet.add(s));
+    }
+  });
+
+  const slots = [...allSlotsSet].sort();
   slotsGrid.innerHTML = '';
 
   if (slots.length === 0) {
-    slotsGrid.innerHTML = '<div class="empty-state" style="padding:24px"><div class="es-icon">🕐</div><div class="es-body">Sin horarios configurados</div></div>';
+    slotsGrid.innerHTML = '<div class="empty-state" style="padding:24px"><div class="es-icon">🕐</div><div class="es-body">Sin horarios configurados en las fechas seleccionadas</div></div>';
     updateFooter();
     return;
   }
 
   slots.forEach(hora => {
-    const key          = `${dateStr}_${hora}`;
-    const reservations = reservationMap[key] || [];
-    const isSelected   = selectedSlots.has(hora);
+    const isSelected = selectedSlots.has(hora);
+
+    // Count how many selected dates have this slot configured
+    const datesWithSlot = sortedDates.filter(dStr => (availableDates[dStr]?.slots || []).includes(hora));
+
+    // Gather existing reservations across selected dates for this slot
+    const registeredNames = new Set();
+    sortedDates.forEach(dStr => {
+      const res = reservationMap[`${dStr}_${hora}`] || [];
+      res.forEach(r => registeredNames.add(r.nombre));
+    });
 
     const card = document.createElement('div');
     card.className = `slot-card ${isSelected ? 'slot-selected' : 'slot-available'}`;
     card.dataset.hora = hora;
 
-    const namesText = reservations.map(r => r.nombre).join(', ');
-    const namesHtml = reservations.length > 0
+    const namesArray = [...registeredNames];
+    const namesText = namesArray.join(', ');
+    const namesHtml = namesArray.length > 0
       ? `<span class="slot-registered-names" title="${escHtml(namesText)}">👥 ${escHtml(namesText)}</span>`
+      : '';
+
+    const datesCountBadge = sortedDates.length > 1
+      ? `<span class="slot-dates-badge" title="Disponible en ${datesWithSlot.length} de ${sortedDates.length} fechas seleccionadas">${datesWithSlot.length}/${sortedDates.length} días</span>`
       : '';
 
     card.innerHTML = `
       <span class="slot-time">${hora}</span>
       <div class="slot-right">
+        ${datesCountBadge}
         ${namesHtml}
         <span class="slot-free-label">${isSelected ? 'Seleccionado' : 'Disponible'}</span>
         ${isSelected ? '<span class="slot-check">✓</span>' : ''}
@@ -297,17 +359,34 @@ function toggleSlot(hora) {
   } else {
     selectedSlots.add(hora);
   }
-  // Re-render slots to reflect selection visually
-  if (selectedDate && availableDates[selectedDate]) {
-    renderSlots(selectedDate, availableDates[selectedDate]);
-  }
+  renderSlots();
+}
+
+function calculateTotalReservationsCount() {
+  let count = 0;
+  selectedDates.forEach(dStr => {
+    const slots = availableDates[dStr]?.slots || [];
+    slots.forEach(h => {
+      if (selectedSlots.has(h)) count++;
+    });
+  });
+  return count;
 }
 
 function updateFooter() {
-  const count = selectedSlots.size;
-  if (count > 0) {
+  const slotCount = selectedSlots.size;
+  const dateCount = selectedDates.size;
+  const totalRes = calculateTotalReservationsCount();
+
+  if (slotCount > 0 && dateCount > 0) {
     slotsFooter.classList.remove('hidden');
-    selectedCountEl.textContent = count;
+    if (selectedCountEl) {
+      if (dateCount === 1) {
+        selectedCountEl.textContent = `${slotCount} horario${slotCount > 1 ? 's' : ''}`;
+      } else {
+        selectedCountEl.textContent = `${totalRes} reserva${totalRes > 1 ? 's' : ''} (${dateCount} días × ${slotCount} horario${slotCount > 1 ? 's' : ''})`;
+      }
+    }
   } else {
     slotsFooter.classList.add('hidden');
   }
@@ -332,20 +411,31 @@ nextMonthBtn.addEventListener('click', () => {
 confirmBtn.addEventListener('click', openModal);
 
 function openModal() {
-  if (selectedSlots.size === 0) return;
+  if (selectedSlots.size === 0 || selectedDates.size === 0) return;
 
-  const sorted = [...selectedSlots].sort();
+  const sortedDates = [...selectedDates].sort();
+  const sortedSlots = [...selectedSlots].sort();
+  const totalRes = calculateTotalReservationsCount();
+
+  const datesFormatted = sortedDates.map(dStr => `<span class="badge badge-accent" style="margin-bottom:2px">${strToDisplayDate(dStr)}</span>`).join(' ');
+
   summaryEl.innerHTML = `
     <div class="summary-card">
-      <div class="summary-row">
-        <span class="summary-label">📅 Fecha</span>
-        <span class="summary-value">${strToDisplayDate(selectedDate)}</span>
-      </div>
-      <div class="summary-row">
-        <span class="summary-label">⏰ Horarios</span>
-        <div class="summary-slots">
-          ${sorted.map(s => `<span class="badge badge-accent">${s}</span>`).join('')}
+      <div class="summary-row" style="flex-direction:column;align-items:flex-start;gap:6px">
+        <span class="summary-label">📅 Fechas seleccionadas (${sortedDates.length})</span>
+        <div class="summary-dates" style="display:flex;flex-wrap:wrap;gap:4px">
+          ${datesFormatted}
         </div>
+      </div>
+      <div class="summary-row" style="margin-top:6px">
+        <span class="summary-label">⏰ Horarios (${sortedSlots.length})</span>
+        <div class="summary-slots">
+          ${sortedSlots.map(s => `<span class="badge badge-accent">${s}</span>`).join('')}
+        </div>
+      </div>
+      <div class="summary-row" style="margin-top:6px;border-top:1px dashed var(--border-light);padding-top:8px">
+        <span class="summary-label">🔢 Total de reservas</span>
+        <span class="summary-value" style="color:var(--accent);font-weight:700;font-size:1.05rem">${totalRes} reserva${totalRes !== 1 ? 's' : ''}</span>
       </div>
     </div>
   `;
@@ -379,29 +469,42 @@ modalSubmit.addEventListener('click', async () => {
     return;
   }
 
-  const slots = [...selectedSlots].sort();
+  const sortedDates = [...selectedDates].sort();
+  const sortedSlots = [...selectedSlots].sort();
   setModalLoading(true);
   modalError.classList.add('hidden');
 
   try {
-    // Batch write one document per slot
     const batch = db.batch();
-    slots.forEach(hora => {
-      const ref = db.collection('reservas').doc();
-      batch.set(ref, {
-        fecha:     selectedDate,
-        hora:      hora,
-        nombre:    nombre,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    let totalCreated = 0;
+
+    sortedDates.forEach(dateStr => {
+      const dateSlots = availableDates[dateStr]?.slots || [];
+      sortedSlots.forEach(hora => {
+        if (dateSlots.includes(hora)) {
+          const ref = db.collection('reservas').doc();
+          batch.set(ref, {
+            fecha:     dateStr,
+            hora:      hora,
+            nombre:    nombre,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          totalCreated++;
+        }
       });
     });
+
+    if (totalCreated === 0) {
+      throw new Error('No hay horarios coincidentes en las fechas seleccionadas.');
+    }
 
     await batch.commit();
 
     closeModal();
     selectedSlots.clear();
-    updateFooter();
-    showToast(`✓ Reserva de ${nombre} confirmada (${slots.length} horario${slots.length > 1 ? 's' : ''})`, 'success');
+    selectedDates.clear();
+    clearDateSelection();
+    showToast(`✓ Reservas de ${nombre} confirmadas (${totalCreated} reserva${totalCreated !== 1 ? 's' : ''} en ${sortedDates.length} fecha${sortedDates.length > 1 ? 's' : ''})`, 'success');
 
   } catch (err) {
     console.error('Reservation error:', err);
@@ -429,3 +532,4 @@ function setModalLoading(loading) {
 // INITIAL RENDER
 // ════════════════════════════════════════════
 renderCalendar();
+
