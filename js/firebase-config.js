@@ -5,12 +5,13 @@
 // ============================================================
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyA4qvavhkPU4BuVxxodfP8T7K28b3y9TAQ",
+  authDomain: "calendarioigle.firebaseapp.com",
+  projectId: "calendarioigle",
+  storageBucket: "calendarioigle.firebasestorage.app",
+  messagingSenderId: "639360594191",
+  appId: "1:639360594191:web:2ad1423e47800e6d880e7a",
+  measurementId: "G-FXG1SZDPGG"
 };
 
 // Inicializar Firebase
