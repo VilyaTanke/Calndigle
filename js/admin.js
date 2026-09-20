@@ -284,17 +284,47 @@ document.querySelectorAll('.preset-btn').forEach(btn => {
 });
 
 // ════════════════════════════════════════════
-// ADD DATE FORM
+// MODE TOGGLE & ADD DATE FORM
 // ════════════════════════════════════════════
+let isBulkMode = false;
+const modeSingleBtn    = document.getElementById('mode-single-btn');
+const modeBulkBtn      = document.getElementById('mode-bulk-btn');
+const singleDateFields = document.getElementById('single-date-fields');
+const bulkDateFields   = document.getElementById('bulk-date-fields');
+const addDateBtnLabel  = document.getElementById('add-date-btn-label');
+const dateStartInput   = document.getElementById('date-start-input');
+const dateEndInput     = document.getElementById('date-end-input');
+
+if (modeSingleBtn && modeBulkBtn) {
+  modeSingleBtn.addEventListener('click', () => setDateMode(false));
+  modeBulkBtn.addEventListener('click', () => setDateMode(true));
+}
+
+function setDateMode(bulk) {
+  isBulkMode = bulk;
+  if (bulk) {
+    modeSingleBtn.classList.remove('active');
+    modeBulkBtn.classList.add('active');
+    singleDateFields.classList.add('hidden');
+    bulkDateFields.classList.remove('hidden');
+    if (addDateBtnLabel) addDateBtnLabel.textContent = '⚡ Añadir fechas masivamente';
+    if (dateInput) dateInput.removeAttribute('required');
+  } else {
+    modeSingleBtn.classList.add('active');
+    modeBulkBtn.classList.remove('active');
+    singleDateFields.classList.remove('hidden');
+    bulkDateFields.classList.add('hidden');
+    if (addDateBtnLabel) addDateBtnLabel.textContent = 'Añadir fecha';
+    if (dateInput) dateInput.setAttribute('required', 'true');
+  }
+}
+
 if (addDateForm) {
   addDateForm.addEventListener('submit', async e => {
     e.preventDefault();
     hideError(formError);
 
-    const fecha    = dateInput?.value || '';
     const rawSlots = slotsInput?.value.trim() || '';
-
-    if (!fecha)    { showError(formError, 'Selecciona una fecha'); return; }
     if (!rawSlots) { showError(formError, 'Introduce al menos un horario'); return; }
 
     const slots = parseSlots(rawSlots);
@@ -303,36 +333,95 @@ if (addDateForm) {
       return;
     }
 
-    setLoading(addDateBtn, true, 'Guardando...');
+    let targetDates = [];
 
-    try {
-      const existing = managedDates.find(d => d.fecha === fecha);
-
-      if (existing) {
-        // Merge slots (union)
-        const merged = [...new Set([...(existing.slots || []), ...slots])].sort();
-        await db.collection('fechas').doc(existing.id).update({
-          slots:  merged,
-          activa: true
-        });
-        showToast(`Horarios añadidos a ${fecha}`, 'success');
-      } else {
-        await db.collection('fechas').add({
-          fecha,
-          slots,
-          activa:    true,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        showToast(`Fecha ${fecha} añadida con ${slots.length} horario(s)`, 'success');
+    if (!isBulkMode) {
+      const fecha = dateInput?.value || '';
+      if (!fecha) { showError(formError, 'Selecciona una fecha'); return; }
+      targetDates = [fecha];
+    } else {
+      const startStr = dateStartInput?.value || '';
+      const endStr   = dateEndInput?.value || '';
+      if (!startStr || !endStr) {
+        showError(formError, 'Selecciona la fecha de inicio y la fecha de fin');
+        return;
+      }
+      if (startStr > endStr) {
+        showError(formError, 'La fecha de inicio debe ser anterior o igual a la fecha de fin');
+        return;
       }
 
-      addDateForm.reset();
+      const checkedDays = Array.from(document.querySelectorAll('.day-cb:checked')).map(cb => parseInt(cb.value));
+      if (checkedDays.length === 0) {
+        showError(formError, 'Selecciona al menos un día de la semana');
+        return;
+      }
+
+      targetDates = [];
+      const cur = new Date(startStr + 'T00:00:00');
+      const end = new Date(endStr + 'T00:00:00');
+
+      while (cur <= end) {
+        const dayOfWeek = cur.getDay(); // 0=Sun, 1=Mon...
+        if (checkedDays.includes(dayOfWeek)) {
+          const yyyy = cur.getFullYear();
+          const mm = String(cur.getMonth() + 1).padStart(2, '0');
+          const dd = String(cur.getDate()).padStart(2, '0');
+          targetDates.push(`${yyyy}-${mm}-${dd}`);
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
+
+      if (targetDates.length === 0) {
+        showError(formError, 'No hay fechas que coincidan con los días seleccionados en ese rango');
+        return;
+      }
+    }
+
+    setLoading(addDateBtn, true, isBulkMode ? 'Guardando masivamente...' : 'Guardando...');
+
+    try {
+      const batch = db.batch();
+      let updatedCount = 0;
+      let createdCount = 0;
+
+      targetDates.forEach(fecha => {
+        const existing = managedDates.find(d => d.fecha === fecha);
+        if (existing) {
+          const merged = [...new Set([...(existing.slots || []), ...slots])].sort();
+          const ref = db.collection('fechas').doc(existing.id);
+          batch.update(ref, { slots: merged, activa: true });
+          updatedCount++;
+        } else {
+          const ref = db.collection('fechas').doc();
+          batch.set(ref, {
+            fecha: fecha,
+            slots: slots,
+            activa: true,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          createdCount++;
+        }
+      });
+
+      await batch.commit();
+
+      if (isBulkMode) {
+        showToast(`✓ Operación masiva: ${targetDates.length} fecha(s) procesada(s) (${createdCount} creadas, ${updatedCount} actualizadas)`, 'success');
+      } else {
+        showToast(`Fecha ${targetDates[0]} guardada con éxito`, 'success');
+      }
+
+      if (dateInput) dateInput.value = '';
+      if (dateStartInput) dateStartInput.value = '';
+      if (dateEndInput) dateEndInput.value = '';
+      if (slotsInput) slotsInput.value = '';
 
     } catch (err) {
       console.error(err);
       showError(formError, 'Error al guardar: ' + (err.message || err.code));
     } finally {
-      setLoading(addDateBtn, false, 'Añadir fecha');
+      setLoading(addDateBtn, false, isBulkMode ? '⚡ Añadir fechas masivamente' : 'Añadir fecha');
     }
   });
 }

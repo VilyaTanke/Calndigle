@@ -287,6 +287,57 @@
       background: var(--accent-dim);
     }
 
+    /* ── MODE TOGGLE & BULK DAYS ── */
+    .mode-toggle-pills {
+      display: flex;
+      background: var(--bg-elevated);
+      padding: 3px;
+      border-radius: var(--r-full);
+      border: 1px solid var(--border);
+    }
+    .mode-pill {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.775rem;
+      font-weight: 600;
+      padding: 4px 12px;
+      border-radius: var(--r-full);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .mode-pill.active {
+      background: var(--accent-dim);
+      color: var(--accent);
+      border: 1px solid var(--accent-mid);
+    }
+    .days-checkbox-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .day-check {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      padding: 5px 9px;
+      border-radius: var(--r-sm);
+      font-size: 0.775rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      user-select: none;
+    }
+    .day-check input {
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .day-check:hover {
+      border-color: var(--border-light);
+      color: var(--text-primary);
+    }
+
     /* ── RESPONSIVE ── */
     @media (max-width: 860px) {
       .admin-two-col { grid-template-columns: 1fr; }
@@ -396,27 +447,61 @@
 
           <!-- Add Date Form -->
           <div class="card">
-            <div class="card-title">
-              <span class="icon">➕</span>
-              Añadir fecha disponible
+            <div class="card-title" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span class="icon">➕</span>
+                <span>Añadir fechas</span>
+              </div>
+              <div class="mode-toggle-pills">
+                <button type="button" class="mode-pill active" id="mode-single-btn">Única</button>
+                <button type="button" class="mode-pill" id="mode-bulk-btn">⚡ Masiva</button>
+              </div>
             </div>
 
             <div class="quick-presets">
               <div class="quick-presets-title">Presets rápidos de horarios</div>
               <div class="presets-grid">
-                <button class="preset-btn" data-preset="09:00-13:00">Mañana (9-13h)</button>
-                <button class="preset-btn" data-preset="14:00-18:00">Tarde (14-18h)</button>
-                <button class="preset-btn" data-preset="09:00-18:00">Jornada completa</button>
-                <button class="preset-btn" data-preset="09:00, 10:00, 11:00">9, 10, 11h</button>
-                <button class="preset-btn" data-preset="16:00, 17:00, 18:00">16, 17, 18h</button>
-                <button class="preset-btn" data-preset="10:00, 12:00, 15:00, 17:00">Alternos</button>
+                <button type="button" class="preset-btn" data-preset="09:00-13:00">Mañana (9-13h)</button>
+                <button type="button" class="preset-btn" data-preset="14:00-18:00">Tarde (14-18h)</button>
+                <button type="button" class="preset-btn" data-preset="09:00-18:00">Jornada completa</button>
+                <button type="button" class="preset-btn" data-preset="09:00, 10:00, 11:00">9, 10, 11h</button>
+                <button type="button" class="preset-btn" data-preset="16:00, 17:00, 18:00">16, 17, 18h</button>
+                <button type="button" class="preset-btn" data-preset="10:00, 12:00, 15:00, 17:00">Alternos</button>
               </div>
             </div>
 
             <form id="add-date-form" autocomplete="off">
-              <div class="form-group">
+              <!-- Single Date Input -->
+              <div id="single-date-fields" class="form-group">
                 <label class="form-label" for="date-input">Fecha</label>
                 <input type="date" class="form-input" id="date-input" required>
+              </div>
+
+              <!-- Bulk Date Range Inputs -->
+              <div id="bulk-date-fields" class="hidden">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                  <div class="form-group">
+                    <label class="form-label" for="date-start-input">Desde fecha</label>
+                    <input type="date" class="form-input" id="date-start-input">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="date-end-input">Hasta fecha</label>
+                    <input type="date" class="form-input" id="date-end-input">
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label" style="margin-bottom:6px">Días de la semana a incluir</label>
+                  <div class="days-checkbox-grid">
+                    <label class="day-check"><input type="checkbox" class="day-cb" value="1" checked> Lun</label>
+                    <label class="day-check"><input type="checkbox" class="day-cb" value="2" checked> Mar</label>
+                    <label class="day-check"><input type="checkbox" class="day-cb" value="3" checked> Mié</label>
+                    <label class="day-check"><input type="checkbox" class="day-cb" value="4" checked> Jue</label>
+                    <label class="day-check"><input type="checkbox" class="day-cb" value="5" checked> Vie</label>
+                    <label class="day-check"><input type="checkbox" class="day-cb" value="6" checked> Sáb</label>
+                    <label class="day-check"><input type="checkbox" class="day-cb" value="0" checked> Dom</label>
+                  </div>
+                </div>
               </div>
 
               <div class="form-group">
@@ -434,7 +519,7 @@
               <div class="form-error hidden" id="form-error"></div>
 
               <button type="submit" class="btn btn-primary btn-full" id="add-date-btn">
-                <span class="btn-label">Añadir fecha</span>
+                <span class="btn-label" id="add-date-btn-label">Añadir fecha</span>
               </button>
             </form>
           </div>
@@ -547,8 +632,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
-  <script src="js/firebase-config.js?v=1.2"></script>
-  <script src="js/admin.js?v=1.2"></script>
+  <script src="js/firebase-config.js?v=1.4"></script>
+  <script src="js/admin.js?v=1.4"></script>
 
 </body>
 </html>
