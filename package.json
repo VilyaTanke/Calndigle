@@ -8,5 +8,8 @@
   },
   "devDependencies": {
     "serve": "^14.2.4"
+  },
+  "dependencies": {
+    "firebase": "^12.19.0"
   }
 }
